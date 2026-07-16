@@ -1,0 +1,92 @@
+// This is your Prisma schema file
+// Learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Sensor Logs (time-series readings from Arduino Opta) ──────────────────
+model SensorLog {
+  id          Int      @id @default(autoincrement())
+  ph          Float?
+  temperature Float?
+  do2         Float?
+  no2         Float?
+  no3         Float?
+  nh4         Float?
+  serialNo    String   @default("OPTA-001") @map("serial_no")
+  recordedAt  DateTime @default(now()) @map("recorded_at")
+
+  @@index([recordedAt(sort: Desc)])
+  @@map("sensor_logs")
+}
+
+// ── Alarm Rules ────────────────────────────────────────────────────────────
+model AlarmRule {
+  id        Int            @id @default(autoincrement())
+  sensor    String         // 'ph' | 'temperature' | 'do2' | 'no2' | 'no3' | 'nh4'
+  condition String         // 'above' | 'below'
+  threshold Float
+  message   String?
+  isActive  Boolean        @default(true) @map("is_active")
+  createdAt DateTime       @default(now()) @map("created_at")
+  history   AlarmHistory[]
+
+  @@unique([sensor, condition])
+  @@map("alarm_rules")
+}
+
+// ── Alarm History ──────────────────────────────────────────────────────────
+model AlarmHistory {
+  id          Int        @id @default(autoincrement())
+  ruleId      Int?       @map("rule_id")
+  sensor      String?
+  value       Float?
+  message     String?
+  smsSent       Boolean    @default(false) @map("sms_sent")
+  triggeredAt   DateTime   @default(now()) @map("triggered_at")
+  acknowledged  Boolean    @default(false)
+  acknowledgedAt DateTime? @map("acknowledged_at")
+  rule          AlarmRule? @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+
+  @@map("alarm_history")
+}
+
+// ── Sensor Calibrations ────────────────────────────────────────────────────
+model Calibration {
+  id           Int      @id @default(autoincrement())
+  sensor       String   @unique
+  offsetVal    Float    @default(0) @map("offset_val")
+  scaleVal     Float    @default(1) @map("scale_val")
+  minThreshold Float?   @map("min_threshold")
+  maxThreshold Float?   @map("max_threshold")
+  notes        String?
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("calibrations")
+}
+
+// ── API Keys ────────────────────────────────────────────────────────────────
+model ApiKey {
+  id        Int      @id @default(autoincrement())
+  name      String
+  keyValue  String   @unique @map("key_value")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  lastUsed  DateTime? @map("last_used")
+
+  @@map("api_keys")
+}
+
+// ── System Settings ─────────────────────────────────────────────────────────
+model Setting {
+  key   String @id
+  value String
+
+  @@map("settings")
+}

@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AquaMonitor — Socket.io Live Tester</title>
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0a0e1a;
+      --surface: #111827;
+      --surface2: #1a2235;
+      --border: #1e2d47;
+      --teal: #00f5c4;
+      --teal-dim: rgba(0, 245, 196, 0.15);
+      --red: #ff3b6b;
+      --red-dim: rgba(255, 59, 107, 0.15);
+      --yellow: #f59e0b;
+      --yellow-dim: rgba(245, 158, 11, 0.12);
+      --text: #e2e8f0;
+      --text-muted: #64748b;
+      --font-mono: 'JetBrains Mono', monospace;
+      --font-sans: 'Inter', sans-serif;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      min-height: 100vh;
+      padding: 24px;
+    }
+
+    /* ── Header ─────────────────────────────────── */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 28px;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    header h1 {
+      font-size: 1.1rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--teal);
+      font-family: var(--font-mono);
+    }
+    header p { color: var(--text-muted); font-size: 0.8rem; margin-top: 2px; }
+
+    .header-right { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+
+    /* Server URL input */
+    .url-row { display: flex; gap: 8px; align-items: center; }
+    #serverUrl {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      padding: 6px 12px;
+      border-radius: 6px;
+      width: 220px;
+      outline: none;
+    }
+    #serverUrl:focus { border-color: var(--teal); }
+    #connectBtn {
+      background: var(--teal);
+      color: #000;
+      font-weight: 700;
+      font-size: 0.75rem;
+      letter-spacing: 0.08em;
+      padding: 6px 16px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: opacity 0.2s;
+      font-family: var(--font-mono);
+      text-transform: uppercase;
+    }
+    #connectBtn:hover { opacity: 0.85; }
+    #connectBtn.disconnect { background: var(--red); color: #fff; }
+
+    /* Status badge */
+    #statusBadge {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 0.75rem; font-family: var(--font-mono);
+      letter-spacing: 0.06em; text-transform: uppercase;
+      padding: 5px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--surface2);
+      color: var(--text-muted);
+      transition: all 0.3s;
+    }
+    #statusBadge.connected { border-color: var(--teal); color: var(--teal); background: var(--teal-dim); }
+    #statusBadge.disconnected { border-color: var(--red); color: var(--red); background: var(--red-dim); }
+    .dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: currentColor;
+      animation: pulse 1.4s infinite;
+    }
+    @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
+
+    .section-label {
+      font-size: 0.7rem; font-family: var(--font-mono);
+      letter-spacing: 0.12em; text-transform: uppercase;
+      color: var(--text-muted); margin-bottom: 12px;
+    }
+
+    .sensor-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+
+    .sensor-card {
+      background: var(--surface);
+      border: 1.5px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      position: relative;
+      overflow: hidden;
+      transition: border-color 0.3s, background 0.3s, box-shadow 0.3s;
+    }
+    .sensor-card::before {
+      content: '';
+      position: absolute; inset: 0;
+      background: linear-gradient(135deg, var(--teal-dim), transparent);
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    .sensor-card.alarm {
+      border-color: var(--red);
+      background: #180d12;
+      box-shadow: 0 0 24px rgba(255,59,107,0.2), inset 0 0 24px rgba(255,59,107,0.05);
+      animation: redPulse 1.5s infinite;
+    }
+    .sensor-card.alarm::before { background: linear-gradient(135deg, var(--red-dim), transparent); opacity: 1; }
+    @keyframes redPulse {
+      0%,100% { box-shadow: 0 0 20px rgba(255,59,107,0.2), inset 0 0 20px rgba(255,59,107,0.05); }
+      50%      { box-shadow: 0 0 36px rgba(255,59,107,0.4), inset 0 0 30px rgba(255,59,107,0.1); }
+    }
+
+    .card-label {
+      font-size: 0.65rem; font-family: var(--font-mono);
+      letter-spacing: 0.12em; text-transform: uppercase;
+      color: var(--text-muted); margin-bottom: 6px;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .alarm-badge {
+      display: none; align-items: center; gap: 4px;
+      font-size: 0.6rem; color: var(--red); font-weight: 700;
+    }
+    .sensor-card.alarm .alarm-badge { display: flex; }
+
+    .card-value {
+      font-size: 2.4rem; font-weight: 700;
+      font-family: var(--font-mono);
+      color: var(--teal);
+      transition: color 0.3s;
+      line-height: 1;
+    }
+    .sensor-card.alarm .card-value { color: var(--red); }
+
+    .card-unit {
+      font-size: 0.75rem; color: var(--text-muted);
+      font-family: var(--font-mono);
+      margin-top: 4px;
+    }
+
+    /* ── Meta strip ──────────────────────────────── */
+    .meta-strip {
+      display: flex; gap: 16px; flex-wrap: wrap;
+      margin-bottom: 28px;
+    }
+    .meta-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; padding: 14px 18px; min-width: 160px;
+    }
+    .meta-card .meta-key { font-size: 0.65rem; color: var(--text-muted); font-family: var(--font-mono); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 4px; }
+    .meta-card .meta-val { font-size: 0.9rem; font-family: var(--font-mono); color: var(--text); font-weight: 600; }
+    .meta-card .meta-val.ok { color: var(--teal); }
+    .meta-card .meta-val.mock { color: var(--yellow); }
+
+    /* ── Two-column bottom ───────────────────────── */
+    .bottom-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    @media (max-width: 800px) { .bottom-grid { grid-template-columns: 1fr; } }
+
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .panel-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface2);
+    }
+    .panel-title {
+      font-size: 0.7rem; font-family: var(--font-mono);
+      letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-muted);
+    }
+    .panel-count {
+      font-size: 0.7rem; font-family: var(--font-mono);
+      background: var(--teal-dim); color: var(--teal);
+      padding: 2px 8px; border-radius: 999px;
+    }
+    .panel-count.red { background: var(--red-dim); color: var(--red); }
+
+    .clear-btn {
+      font-size: 0.65rem; font-family: var(--font-mono);
+      background: transparent; color: var(--text-muted);
+      border: 1px solid var(--border); border-radius: 4px;
+      padding: 2px 8px; cursor: pointer;
+      transition: color 0.2s, border-color 0.2s;
+    }
+    .clear-btn:hover { color: var(--text); border-color: var(--text-muted); }
+
+    /* Event log */
+    .event-log {
+      height: 320px; overflow-y: auto;
+      padding: 12px;
+      display: flex; flex-direction: column; gap: 6px;
+      font-family: var(--font-mono); font-size: 0.72rem;
+    }
+    .event-log::-webkit-scrollbar { width: 4px; }
+    .event-log::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+    .log-entry {
+      background: var(--surface2);
+      border-left: 3px solid var(--border);
+      border-radius: 0 6px 6px 0;
+      padding: 8px 10px;
+      animation: slideIn 0.2s ease;
+      word-break: break-all;
+    }
+    .log-entry.sensor { border-color: var(--teal); }
+    .log-entry.alarm  { border-color: var(--red); background: #160b10; }
+    .log-entry.system { border-color: var(--yellow); }
+    @keyframes slideIn { from { opacity: 0; transform: translateX(-6px); } to { opacity: 1; transform: none; } }
+
+    .log-time { color: var(--text-muted); margin-right: 8px; font-size: 0.65rem; }
+    .log-event { font-weight: 700; margin-right: 6px; }
+    .log-entry.sensor .log-event { color: var(--teal); }
+    .log-entry.alarm  .log-event { color: var(--red); }
+    .log-entry.system .log-event { color: var(--yellow); }
+    .log-body { color: #94a3b8; margin-top: 4px; white-space: pre-wrap; }
+
+    /* Alarm notification list */
+    .alarm-list {
+      height: 320px; overflow-y: auto;
+      padding: 12px;
+      display: flex; flex-direction: column; gap: 8px;
+    }
+    .alarm-list::-webkit-scrollbar { width: 4px; }
+    .alarm-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+    .alarm-item {
+      background: #160b10;
+      border: 1px solid rgba(255,59,107,0.3);
+      border-radius: 8px;
+      padding: 10px 14px;
+      animation: slideIn 0.2s ease;
+    }
+    .alarm-item-sensor {
+      font-size: 0.7rem; font-family: var(--font-mono);
+      letter-spacing: 0.1em; text-transform: uppercase;
+      color: var(--red); font-weight: 700; margin-bottom: 2px;
+    }
+    .alarm-item-msg { font-size: 0.8rem; color: var(--text); margin-bottom: 4px; }
+    .alarm-item-meta { font-size: 0.65rem; color: var(--text-muted); font-family: var(--font-mono); }
+
+    .empty-state {
+      text-align: center; padding: 48px 0;
+      color: var(--text-muted); font-size: 0.8rem; font-family: var(--font-mono);
+    }
+    .empty-state span { display: block; font-size: 2rem; margin-bottom: 8px; opacity: 0.4; }
+  </style>
+</head>
+<body>
+
+  <!-- ── Header ── -->
+  <header>
+    <div>
+      <h1>⬡ AquaMonitor — Socket.io Tester</h1>
+      <p>Real-time sensor feed · For developer handoff</p>
+    </div>
+    <div class="header-right">
+      <div class="url-row">
+        <input id="serverUrl" type="text" value="http://localhost:5000" placeholder="Server URL" />
+        <button id="connectBtn" onclick="toggleConnection()">Connect</button>
+      </div>
+      <div id="statusBadge">
+        <span class="dot"></span>
+        <span id="statusText">Disconnected</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ── Sensor Cards ── -->
+  <p class="section-label">Live Sensor Readings — Updates every 3s</p>
+  <div class="sensor-grid" id="sensorGrid">
+    <!-- cards injected by JS -->
+  </div>
+
+  <!-- ── Meta ── -->
+  <div class="meta-strip">
+    <div class="meta-card">
+      <div class="meta-key">Serial No</div>
+      <div class="meta-val" id="metaSerial">—</div>
+    </div>
+    <div class="meta-card">
+      <div class="meta-key">Last Update</div>
+      <div class="meta-val" id="metaTimestamp">—</div>
+    </div>
+    <div class="meta-card">
+      <div class="meta-key">Mode</div>
+      <div class="meta-val" id="metaMock">—</div>
+    </div>
+    <div class="meta-card">
+      <div class="meta-key">Total Events</div>
+      <div class="meta-val ok" id="metaCount">0</div>
+    </div>
+  </div>
+
+  <!-- ── Bottom panels ── -->
+  <div class="bottom-grid">
+
+    <!-- Event log -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">📡 Event Log</span>
+        <div style="display:flex;gap:8px;align-items:center">
+          <span class="panel-count" id="logCount">0</span>
+          <button class="clear-btn" onclick="clearLog()">Clear</button>
+        </div>
+      </div>
+      <div class="event-log" id="eventLog">
+        <div class="empty-state"><span>📡</span>Connect to start receiving events</div>
+      </div>
+    </div>
+
+    <!-- Alarm feed -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">🚨 Alarm Feed</span>
+        <div style="display:flex;gap:8px;align-items:center">
+          <span class="panel-count red" id="alarmCount">0</span>
+          <button class="clear-btn" onclick="clearAlarms()">Clear</button>
+        </div>
+      </div>
+      <div class="alarm-list" id="alarmList">
+        <div class="empty-state"><span>🔕</span>No alarms triggered</div>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    // ── Sensor config ─────────────────────────────
+    const SENSORS = {
+      ph:          { label: 'pH Level',             unit: 'pH'   },
+      temperature: { label: 'Temperature',          unit: '°C'   },
+      do2:         { label: 'Dissolved Oxygen (DO)', unit: 'mg/L' },
+      no2:         { label: 'Nitrite (NO2-N)',       unit: 'mg/L' },
+      no3:         { label: 'Nitrate (NO3-N)',       unit: 'mg/L' },
+      nh4:         { label: 'Ammonium (NH4+)',       unit: 'mg/L' },
+    };
+
+    let socket = null;
+    let eventCount = 0;
+    let alarmCount = 0;
+    let logCount = 0;
+
+    // ── Build sensor cards ────────────────────────
+    function buildGrid() {
+      const grid = document.getElementById('sensorGrid');
+      grid.innerHTML = '';
+      for (const [key, cfg] of Object.entries(SENSORS)) {
+        grid.innerHTML += `
+          <div class="sensor-card" id="card-${key}">
+            <div class="card-label">
+              <span>${cfg.label}</span>
+              <span class="alarm-badge">⚠ ALARM</span>
+            </div>
+            <div class="card-value" id="val-${key}">—</div>
+            <div class="card-unit">${cfg.unit}</div>
+          </div>`;
+      }
+    }
+    buildGrid();
+
+    // ── Connection toggle ─────────────────────────
+    function toggleConnection() {
+      if (socket && socket.connected) {
+        socket.disconnect();
+      } else {
+        connect();
+      }
+    }
+
+    function connect() {
+      const url = document.getElementById('serverUrl').value.trim();
+      if (socket) socket.disconnect();
+
+      socket = io(url, { transports: ['websocket', 'polling'] });
+
+      socket.on('connect', () => {
+        setStatus(true);
+        addLog('system', 'connect', `Connected to ${url} · ID: ${socket.id}`);
+      });
+
+      socket.on('disconnect', (reason) => {
+        setStatus(false);
+        addLog('system', 'disconnect', `Disconnected · Reason: ${reason}`);
+      });
+
+      socket.on('connect_error', (err) => {
+        addLog('system', 'connect_error', err.message);
+      });
+
+      // ── sensor_update ──
+      socket.on('sensor_update', (data) => {
+        eventCount++;
+        document.getElementById('metaCount').textContent = eventCount;
+
+        // Update cards
+        for (const key of Object.keys(SENSORS)) {
+          const valEl = document.getElementById(`val-${key}`);
+          const cardEl = document.getElementById(`card-${key}`);
+          if (data[key] !== undefined) {
+            valEl.textContent = data[key];
+          }
+          // Alarm state → red card
+          if (data.alarms) {
+            cardEl.classList.toggle('alarm', !!data.alarms[key]);
+          }
+        }
+
+        // Meta strip
+        document.getElementById('metaSerial').textContent = data.serial_no || '—';
+        document.getElementById('metaMock').className = 'meta-val ' + (data.mock ? 'mock' : 'ok');
+        document.getElementById('metaMock').textContent = data.mock ? '🟡 MOCK' : '🟢 LIVE';
+
+        const ts = data.timestamp ? new Date(data.timestamp).toLocaleTimeString() : '—';
+        document.getElementById('metaTimestamp').textContent = ts;
+
+        // Log entry (compact)
+        const summary = Object.keys(SENSORS)
+          .map(k => `${k}: ${data[k] ?? '?'}`)
+          .join(' · ');
+        addLog('sensor', 'sensor_update', summary);
+      });
+
+      // ── alarm_triggered ──
+      socket.on('alarm_triggered', (data) => {
+        addLog('alarm', 'alarm_triggered', JSON.stringify(data, null, 2));
+        addAlarm(data);
+      });
+    }
+
+    // ── Status badge ──────────────────────────────
+    function setStatus(connected) {
+      const badge  = document.getElementById('statusBadge');
+      const text   = document.getElementById('statusText');
+      const btn    = document.getElementById('connectBtn');
+      badge.className = connected ? 'connected' : 'disconnected';
+      text.textContent = connected ? 'Connected' : 'Disconnected';
+      btn.textContent  = connected ? 'Disconnect' : 'Connect';
+      btn.className    = connected ? 'disconnect' : '';
+    }
+
+    // ── Log helpers ───────────────────────────────
+    function addLog(type, event, body) {
+      logCount++;
+      document.getElementById('logCount').textContent = logCount;
+
+      const log = document.getElementById('eventLog');
+
+      // Remove empty state
+      const empty = log.querySelector('.empty-state');
+      if (empty) empty.remove();
+
+      const time = new Date().toLocaleTimeString();
+      const el = document.createElement('div');
+      el.className = `log-entry ${type}`;
+      el.innerHTML = `
+        <span class="log-time">${time}</span><span class="log-event">${event}</span>
+        <div class="log-body">${escHtml(body)}</div>`;
+      log.prepend(el);
+
+      // Cap at 100 entries
+      while (log.children.length > 100) log.lastChild.remove();
+    }
+
+    function clearLog() {
+      document.getElementById('eventLog').innerHTML =
+        '<div class="empty-state"><span>📡</span>Log cleared</div>';
+      logCount = 0;
+      document.getElementById('logCount').textContent = 0;
+    }
+
+    // ── Alarm helpers ─────────────────────────────
+    function addAlarm(data) {
+      alarmCount++;
+      document.getElementById('alarmCount').textContent = alarmCount;
+
+      const list = document.getElementById('alarmList');
+      const empty = list.querySelector('.empty-state');
+      if (empty) empty.remove();
+
+      const time = new Date().toLocaleTimeString();
+      const el = document.createElement('div');
+      el.className = 'alarm-item';
+      el.innerHTML = `
+        <div class="alarm-item-sensor">⚠ ${(data.sensor || '').toUpperCase()}</div>
+        <div class="alarm-item-msg">${escHtml(data.message || '')}</div>
+        <div class="alarm-item-meta">Value: ${data.value} · ${time}</div>`;
+      list.prepend(el);
+    }
+
+    function clearAlarms() {
+      document.getElementById('alarmList').innerHTML =
+        '<div class="empty-state"><span>🔕</span>No alarms triggered</div>';
+      alarmCount = 0;
+      document.getElementById('alarmCount').textContent = 0;
+    }
+
+    function escHtml(str) {
+      return String(str)
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+        .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+  </script>
+</body>
+</html>
