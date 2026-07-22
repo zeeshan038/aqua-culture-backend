@@ -159,21 +159,41 @@ class ModbusService {
           const msg = rule.message ||
             `⚠️ ALARM: ${rule.sensor.toUpperCase()} is ${value} (${rule.condition} ${rule.threshold})`;
 
-          // Log to alarm history via Prisma
-          await this.prisma.alarmHistory.create({
-            data: {
-              ruleId:  rule.id,
-              sensor:  rule.sensor,
-              value,
-              message: msg,
+          const existingActiveAlarm = await this.prisma.alarmHistory.findFirst({
+            where: {
+              ruleId: rule.id,
+              acknowledged: false,
             },
           });
 
-          // Emit alarm to frontend
-          emitAlarmTriggered({ sensor: rule.sensor, value, message: msg });
+          if (existingActiveAlarm) {
+            // Update the existing active alarm's timestamp and value
+            await this.prisma.alarmHistory.update({
+              where: { id: existingActiveAlarm.id },
+              data: {
+                lastTriggeredAt: new Date(),
+                value,
+              },
+            });
+            // Emit alarm to frontend for live updates, but don't send another push notification
+            emitAlarmTriggered({ sensor: rule.sensor, value, message: msg });
+          } else {
+            // Log to alarm history via Prisma
+            await this.prisma.alarmHistory.create({
+              data: {
+                ruleId:  rule.id,
+                sensor:  rule.sensor,
+                value,
+                message: msg,
+              },
+            });
 
-          // Push alert
-          await pushService.sendAlert(msg);
+            // Emit alarm to frontend
+            emitAlarmTriggered({ sensor: rule.sensor, value, message: msg });
+
+            // Push alert
+            await pushService.sendAlert(msg);
+          }
         }
       }
     } catch (err) {

@@ -252,7 +252,7 @@ export const getHistory = async (req, res) => {
 export const testAlert = async (req, res) => {
   try {
     const sent = await pushService.sendAlert('🧪 Test alert from AquaMonitor SCADA system!');
-    res.json({ success: sent, message: sent ? 'Alert sent!' : 'PushPlus not configured' });
+    res.json({ success: sent, message: sent ? 'Alert sent!' : 'Telegram not configured' });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

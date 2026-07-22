@@ -1,41 +1,41 @@
 // utils/pushService.js
-// Sends alarm notifications via PushPlus (pushplus.plus) for WeChat alerts in China
+// Sends alarm notifications via Telegram Bot
 
 import 'dotenv/config';
 
 async function sendAlert(message) {
-  const token = process.env.PUSHPLUS_TOKEN;
-  if (!token) {
-    console.log('📵 PushPlus token not configured. Alert:', message);
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.TELEGRAM_CHAT_ID;
+
+  if (!token || !chatId) {
+    console.log('📵 Telegram token or chat ID not configured. Alert:', message);
     return false;
   }
   
   try {
-    // PushPlus API format: POST to http://www.pushplus.plus/send
-    // Body: { "token": "...", "title": "...", "content": "..." }
-    const response = await fetch('http://www.pushplus.plus/send', {
+    const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        token: token,
-        title: '🐟 AquaMonitor Alert',
-        content: message
+        chat_id: chatId,
+        text: `🚨 <b>Marcel Alert</b>\n\n${message}`,
+        parse_mode: 'HTML'
       })
     });
 
     const data = await response.json();
 
-    if (response.ok && data.code === 200) {
-      console.log('📲 WeChat alert sent via PushPlus');
+    if (response.ok && data.ok) {
+      console.log('📲 Telegram alert sent successfully');
       return true;
     } else {
-      console.error('❌ PushPlus send error:', data.msg || 'Unknown error');
+      console.error('❌ Telegram send error:', data.description || 'Unknown error');
       return false;
     }
   } catch (err) {
-    console.error('❌ PushPlus connection error:', err.message);
+    console.error('❌ Telegram connection error:', err.message);
     return false;
   }
 }

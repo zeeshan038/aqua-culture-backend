@@ -15,8 +15,9 @@ let io = null;
 export function initSockets(httpServer) {
   io = new Server(httpServer, {
     cors: {
-      origin: '*',
+      origin: ['http://localhost:5173', 'https://hmi-water-quality.vercel.app'],
       methods: ['GET', 'POST'],
+      credentials: true
     },
   });
 

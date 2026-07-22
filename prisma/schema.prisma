@@ -43,16 +43,17 @@ model AlarmRule {
 
 // ── Alarm History ──────────────────────────────────────────────────────────
 model AlarmHistory {
-  id          Int        @id @default(autoincrement())
-  ruleId      Int?       @map("rule_id")
-  sensor      String?
-  value       Float?
-  message     String?
-  smsSent       Boolean    @default(false) @map("sms_sent")
-  triggeredAt   DateTime   @default(now()) @map("triggered_at")
-  acknowledged  Boolean    @default(false)
-  acknowledgedAt DateTime? @map("acknowledged_at")
-  rule          AlarmRule? @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+  id              Int        @id @default(autoincrement())
+  ruleId          Int?       @map("rule_id")
+  sensor          String?
+  value           Float?
+  message         String?
+  smsSent         Boolean    @default(false) @map("sms_sent")
+  triggeredAt     DateTime   @default(now()) @map("triggered_at")
+  lastTriggeredAt DateTime   @default(now()) @map("last_triggered_at")
+  acknowledged    Boolean    @default(false)
+  acknowledgedAt  DateTime?  @map("acknowledged_at")
+  rule            AlarmRule? @relation(fields: [ruleId], references: [id], onDelete: SetNull)
 
   @@map("alarm_history")
 }

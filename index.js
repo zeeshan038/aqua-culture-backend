@@ -21,7 +21,10 @@ const server = http.createServer(app);
 const io = initSockets(server);
 
 // Middleware 
-app.use(cors());
+app.use(cors({ 
+  origin: ['http://localhost:5173', 'https://hmi-water-quality.vercel.app'], 
+  credentials: true 
+}));
 app.use(express.json());
 
 //router

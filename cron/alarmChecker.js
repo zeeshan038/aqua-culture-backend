@@ -39,23 +39,46 @@ async function checkAlarms(io) {
 
       if (!breached) continue;
 
-      // 4. Apply cooldown — don't re-alert within 5 minutes for same rule
+      // 4. Check if an active alarm already exists
+      const existingActiveAlarm = await prisma.alarmHistory.findFirst({
+        where: { ruleId: rule.id, acknowledged: false },
+      });
+
+      if (existingActiveAlarm) {
+        // Just update the timestamp, do NOT create a new row or send another SMS
+        await prisma.alarmHistory.update({
+          where: { id: existingActiveAlarm.id },
+          data: { lastTriggeredAt: new Date(), value: sensorValue },
+        });
+
+        if (io) {
+          io.emit('alarm:triggered', {
+            rule,
+            value: sensorValue,
+            history: existingActiveAlarm,
+          });
+        }
+        continue;
+      }
+
+      // 5. Apply cooldown — don't re-alert within 5 minutes for same rule if it's a NEW alarm
+      // (Though since we only trigger new alarms when there are no active ones, this might be redundant but safe to keep)
       const lastAlert = cooldownMap.get(rule.id);
       if (lastAlert && Date.now() - lastAlert < COOLDOWN_MS) continue;
 
       cooldownMap.set(rule.id, Date.now());
 
-      // 5. Build alert message
+      // 6. Build alert message
       const conditionText = rule.condition === 'above' ? 'exceeded' : 'dropped below';
       const alertMsg =
         rule.message ||
         `⚠️ <b>${rule.sensor.toUpperCase()}</b> ${conditionText} threshold!\n` +
         `Value: <b>${sensorValue}</b> | Limit: <b>${rule.threshold}</b>`;
 
-      // 6. Send Push notification
+      // 7. Send Push notification
       const smsSent = await pushService.sendAlert(alertMsg);
 
-      // 7. Save to AlarmHistory
+      // 8. Save to AlarmHistory
       const historyEntry = await prisma.alarmHistory.create({
         data: {
           ruleId:      rule.id,
@@ -68,7 +91,7 @@ async function checkAlarms(io) {
 
       console.log(`🚨 Alarm triggered: ${rule.sensor} is ${sensorValue} (${rule.condition} ${rule.threshold})`);
 
-      // 8. Emit real-time alarm event via Socket.io (if io is provided)
+      // 9. Emit real-time alarm event via Socket.io (if io is provided)
       if (io) {
         io.emit('alarm:triggered', {
           rule,
