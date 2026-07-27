@@ -91,8 +91,7 @@ class ModbusService {
         let unitId = parseInt(process.env.MODBUS_UNIT_ID || '1');
         
         this.client.setID(unitId);
-        
-        // Direct serial sensors typically use 1 register (16-bit int)
+
         const registerCount = isDirectSerial ? 1 : count;
         
         const data = await this.client.readHoldingRegisters(address, registerCount);
