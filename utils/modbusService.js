@@ -52,14 +52,26 @@ class ModbusService {
 
   async connect() {
     try {
-      await this.client.connectTCP(process.env.MODBUS_HOST || '192.168.1.100', {
-        port: parseInt(process.env.MODBUS_PORT || '502'),
-      });
+      if (process.env.MODBUS_CONNECTION_TYPE === 'serial') {
+        const path = process.env.MODBUS_SERIAL_PATH || '/dev/ttyUSB0';
+        const baudRate = parseInt(process.env.MODBUS_BAUD_RATE || '9600');
+        await this.client.connectRTUBuffered(path, {
+          baudRate,
+          dataBits: 8,
+          stopBits: 1,
+          parity: 'none',
+        });
+        console.log(`🔌 Modbus RTU connected via Serial to ${path} (${baudRate} baud)`);
+      } else {
+        await this.client.connectTCP(process.env.MODBUS_HOST || '192.168.1.100', {
+          port: parseInt(process.env.MODBUS_PORT || '502'),
+        });
+        console.log('🔌 Modbus TCP connected to Arduino Opta');
+      }
       this.client.setID(parseInt(process.env.MODBUS_UNIT_ID || '1'));
       this.client.setTimeout(3000);
       this.connected = true;
       this.mockMode = false;
-      console.log('🔌 Modbus TCP connected to Arduino Opta');
     } catch (err) {
       console.warn(`⚠️  Modbus not available (${err.message}). Running in MOCK mode.`);
       this.connected = false;
