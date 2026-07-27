@@ -134,7 +134,7 @@ class ModbusService {
         calMap[c.sensor] = { offset: c.offsetVal, scale: c.scaleVal };
       });
 
-      // Apply calibrations: calibrated = (raw × scale) + offset
+  
       const calibrated = {};
       for (const [key, value] of Object.entries(raw)) {
         const cal = calMap[key] || { offset: 0, scale: 1 };
