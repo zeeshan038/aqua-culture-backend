@@ -87,16 +87,8 @@ class ModbusService {
     
     for (const [sensor, { address, count }] of Object.entries(REGISTER_MAP)) {
       try {
-        // If connecting directly to sensors via serial, we set the correct Modbus Slave ID.
-        // By default, let's use the configured MODBUS_UNIT_ID, but let's allow setting different IDs:
+        // Use the Unit ID defined in the env file (factory default is usually 1)
         let unitId = parseInt(process.env.MODBUS_UNIT_ID || '1');
-        
-        // If multiple sensors are wired in parallel, they must have unique slave IDs:
-        // E.g., pH = 1, DO = 2. You can customize these as needed.
-        if (isDirectSerial) {
-          if (sensor === 'ph') unitId = 1;
-          else if (sensor === 'do2') unitId = 2; // Assume DO is Unit ID 2
-        }
         
         this.client.setID(unitId);
         
