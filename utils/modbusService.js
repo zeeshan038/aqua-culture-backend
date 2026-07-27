@@ -86,11 +86,11 @@ class ModbusService {
     const isDirectSerial = process.env.MODBUS_CONNECTION_TYPE === 'serial';
     const mockVals = this.generateMockData();
     
-    // In direct serial mode, we only poll the connected DO sensor.
-    // Register 0 is DO2 (scaled by 100), Register 1 is Temperature (scaled by 10).
+    // In direct serial mode, the sensor returns 32-bit floats (2 registers each)
+    // Register 0-1 is DO2 (mg/L), Register 4-5 is Temperature (°C)
     const serialMap = {
-      do2: { address: 0, scale: 100 },
-      temperature: { address: 1, scale: 10 },
+      do2: { address: 0, count: 2 },
+      temperature: { address: 4, count: 2 },
     };
     
     const mapToUse = isDirectSerial ? serialMap : REGISTER_MAP;
@@ -104,17 +104,11 @@ class ModbusService {
         let unitId = parseInt(process.env.MODBUS_UNIT_ID || '1');
         this.client.setID(unitId);
         
-        if (isDirectSerial) {
-          const data = await this.client.readHoldingRegisters(config.address, 1);
-          const rawVal = data.data[0];
-          readings[sensor] = parseFloat((rawVal / config.scale).toFixed(2));
-        } else {
-          const data = await this.client.readHoldingRegisters(config.address, config.count);
-          readings[sensor] = this.registersToFloat(data.data);
-        }
+        const data = await this.client.readHoldingRegisters(config.address, config.count);
+        readings[sensor] = this.registersToFloat(data.data);
       } catch (err) {
         console.warn(`⚠️ Modbus read timeout/error for ${sensor} (Unit ID: ${this.client.getID()}): ${err.message}`);
-
+        // readings[sensor] remains populated with mockVals[sensor]
       }
     }
     
