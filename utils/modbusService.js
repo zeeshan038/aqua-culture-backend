@@ -114,7 +114,7 @@ class ModbusService {
         }
       } catch (err) {
         console.warn(`⚠️ Modbus read timeout/error for ${sensor} (Unit ID: ${this.client.getID()}): ${err.message}`);
-        // readings[sensor] remains populated with mockVals[sensor]
+
       }
     }
     
