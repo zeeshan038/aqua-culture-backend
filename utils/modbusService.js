@@ -84,33 +84,37 @@ class ModbusService {
     
     const readings = {};
     const isDirectSerial = process.env.MODBUS_CONNECTION_TYPE === 'serial';
+    const mockVals = this.generateMockData();
     
-    for (const [sensor, { address, count }] of Object.entries(REGISTER_MAP)) {
+    // In direct serial mode, we only poll the connected DO sensor.
+    // Register 0 is DO2 (scaled by 100), Register 1 is Temperature (scaled by 10).
+    const serialMap = {
+      do2: { address: 0, scale: 100 },
+      temperature: { address: 1, scale: 10 },
+    };
+    
+    const mapToUse = isDirectSerial ? serialMap : REGISTER_MAP;
+    
+    // Populate all readings with mock/fallback values first
+    Object.assign(readings, mockVals);
+    
+    // Attempt to read actual hardware sensors
+    for (const [sensor, config] of Object.entries(mapToUse)) {
       try {
-        // Use the Unit ID defined in the env file (factory default is usually 1)
         let unitId = parseInt(process.env.MODBUS_UNIT_ID || '1');
-        
         this.client.setID(unitId);
-
-        const registerCount = isDirectSerial ? 1 : count;
-        
-        const data = await this.client.readHoldingRegisters(address, registerCount);
         
         if (isDirectSerial) {
-          // Direct sensors usually return 16-bit int scaled by 100 (e.g. 750 = 7.50)
+          const data = await this.client.readHoldingRegisters(config.address, 1);
           const rawVal = data.data[0];
-          readings[sensor] = parseFloat((rawVal / 100).toFixed(2));
+          readings[sensor] = parseFloat((rawVal / config.scale).toFixed(2));
         } else {
-          // PLC gateway returns 32-bit floats (2 registers)
+          const data = await this.client.readHoldingRegisters(config.address, config.count);
           readings[sensor] = this.registersToFloat(data.data);
         }
       } catch (err) {
-        // If a sensor is disconnected or times out, log a warning and continue
         console.warn(`⚠️ Modbus read timeout/error for ${sensor} (Unit ID: ${this.client.getID()}): ${err.message}`);
-        
-        // Fall back to a default mock value for this disconnected sensor so the app stays functional
-        const mockVals = this.generateMockData();
-        readings[sensor] = mockVals[sensor];
+        // readings[sensor] remains populated with mockVals[sensor]
       }
     }
     
@@ -205,7 +209,7 @@ class ModbusService {
             await this.prisma.alarmHistory.update({
               where: { id: existingActiveAlarm.id },
               data: {
-                lastTriggeredAt: new Date(),
+                triggeredAt: new Date(),
                 value,
               },
             });
