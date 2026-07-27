@@ -81,18 +81,49 @@ class ModbusService {
 
   async readSensors() {
     if (this.mockMode) return this.generateMockData();
-    try {
-      const readings = {};
-      for (const [sensor, { address, count }] of Object.entries(REGISTER_MAP)) {
-        const data = await this.client.readHoldingRegisters(address, count);
-        readings[sensor] = this.registersToFloat(data.data);
+    
+    const readings = {};
+    const isDirectSerial = process.env.MODBUS_CONNECTION_TYPE === 'serial';
+    
+    for (const [sensor, { address, count }] of Object.entries(REGISTER_MAP)) {
+      try {
+        // If connecting directly to sensors via serial, we set the correct Modbus Slave ID.
+        // By default, let's use the configured MODBUS_UNIT_ID, but let's allow setting different IDs:
+        let unitId = parseInt(process.env.MODBUS_UNIT_ID || '1');
+        
+        // If multiple sensors are wired in parallel, they must have unique slave IDs:
+        // E.g., pH = 1, DO = 2. You can customize these as needed.
+        if (isDirectSerial) {
+          if (sensor === 'ph') unitId = 1;
+          else if (sensor === 'do2') unitId = 2; // Assume DO is Unit ID 2
+        }
+        
+        this.client.setID(unitId);
+        
+        // Direct serial sensors typically use 1 register (16-bit int)
+        const registerCount = isDirectSerial ? 1 : count;
+        
+        const data = await this.client.readHoldingRegisters(address, registerCount);
+        
+        if (isDirectSerial) {
+          // Direct sensors usually return 16-bit int scaled by 100 (e.g. 750 = 7.50)
+          const rawVal = data.data[0];
+          readings[sensor] = parseFloat((rawVal / 100).toFixed(2));
+        } else {
+          // PLC gateway returns 32-bit floats (2 registers)
+          readings[sensor] = this.registersToFloat(data.data);
+        }
+      } catch (err) {
+        // If a sensor is disconnected or times out, log a warning and continue
+        console.warn(`⚠️ Modbus read timeout/error for ${sensor} (Unit ID: ${this.client.getID()}): ${err.message}`);
+        
+        // Fall back to a default mock value for this disconnected sensor so the app stays functional
+        const mockVals = this.generateMockData();
+        readings[sensor] = mockVals[sensor];
       }
-      return readings;
-    } catch (err) {
-      console.error('❌ Modbus read error:', err.message);
-      this.mockMode = true;
-      return this.generateMockData();
     }
+    
+    return readings;
   }
 
   async poll() {
@@ -204,7 +235,7 @@ class ModbusService {
             emitAlarmTriggered({ sensor: rule.sensor, value, message: msg });
 
             // Push alert
-            await pushService.sendAlert(msg);
+            await pushService.sendAlert(msg);     
           }
         }
       }
