@@ -123,6 +123,7 @@ class ModbusService {
 
   async poll() {
     const raw = await this.readSensors();
+    console.log('📊 Sensor readings:', raw);
     const serialNo = process.env.SERIAL_NO || 'OPTA-001';
 
     try {
