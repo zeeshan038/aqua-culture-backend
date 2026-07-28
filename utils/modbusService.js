@@ -85,10 +85,13 @@ class ModbusService {
     const mockVals = this.generateMockData();
     
     // In direct serial mode, the sensor returns 32-bit floats (2 registers each)
-    // Register 2-3 is DO2 (mg/L), Register 4-5 is Temperature (°C)
+    // Each sensor MUST have its own unique Unit ID on the RS485 bus to avoid conflicts:
+    //   DO2 sensor  → Unit ID 1  (registers: 2 = mg/L, 4 = Temperature °C)
+    //   pH sensor   → Unit ID 2
     const serialMap = {
-      do2: { address: 2, count: 2 },
-      temperature: { address: 4, count: 2 },
+      do2:         { unitId: 1, address: 2, count: 2 },
+      temperature: { unitId: 1, address: 4, count: 2 },
+      ph:          { unitId: 2, address: 0, count: 2 },
     };
     
     const mapToUse = isDirectSerial ? serialMap : REGISTER_MAP;
@@ -99,7 +102,8 @@ class ModbusService {
     // Attempt to read actual hardware sensors
     for (const [sensor, config] of Object.entries(mapToUse)) {
       try {
-        let unitId = parseInt(process.env.MODBUS_UNIT_ID || '1');
+        // Set the correct Unit ID for each individual sensor on the bus
+        const unitId = config.unitId ?? parseInt(process.env.MODBUS_UNIT_ID || '1');
         this.client.setID(unitId);
         
         const data = await this.client.readHoldingRegisters(config.address, config.count);
@@ -109,6 +113,7 @@ class ModbusService {
         // readings[sensor] remains populated with mockVals[sensor]
       }
     }
+
     
     return readings;
   }
