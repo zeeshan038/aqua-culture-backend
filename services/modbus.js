@@ -22,6 +22,7 @@ class ModbusService {
     this.intervalId = null;
   }
 
+
   registersToFloat(registers) {
     const buf = Buffer.alloc(4);
     buf.writeUInt16BE(registers[0], 0);

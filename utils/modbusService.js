@@ -11,12 +11,12 @@ import { emitAlarmTriggered } from '../sockets/alarmSocket.js';
 // Default Modbus register map for Arduino Opta
 // Each sensor occupies 2 registers (32-bit float, big-endian)
 const REGISTER_MAP = {
-  ph:          { address: 0,  count: 2 },
-  temperature: { address: 2,  count: 2 },
-  do2:         { address: 4,  count: 2 },
-  no2:         { address: 6,  count: 2 },
-  no3:         { address: 8,  count: 2 },
-  nh4:         { address: 10, count: 2 },
+  ph: { address: 0, count: 2 },
+  temperature: { address: 2, count: 2 },
+  do2: { address: 4, count: 2 },
+  no2: { address: 6, count: 2 },
+  no3: { address: 8, count: 2 },
+  nh4: { address: 10, count: 2 },
 };
 
 class ModbusService {
@@ -45,12 +45,12 @@ class ModbusService {
   // Realistic mock data for development without hardware
   generateMockData() {
     return {
-      ph:          0.0,
+      ph: 0.0,
       temperature: 0.0,
-      do2:         0.0,
-      no2:         0.0,
-      no3:         0.0,
-      nh4:         0.0,
+      do2: 0.0,
+      no2: 0.0,
+      no3: 0.0,
+      nh4: 0.0,
     };
   }
 
@@ -85,12 +85,12 @@ class ModbusService {
 
   async readSensors() {
     if (this.mockMode) return { readings: this.generateMockData(), connected: new Set() };
-    
+
     const readings = {};
     const connectedSensors = new Set();
     const isDirectSerial = process.env.MODBUS_CONNECTION_TYPE === 'serial';
     const mockVals = this.generateMockData();
-    
+
     // ── Serial Register Map (based on bus scan results) ──────────────────
     // Unit ID 2: pH+Temp sensor (16-bit integers)
     //   Register 0 → pH        (raw ÷ 100, e.g. 658 → 6.58)
@@ -99,12 +99,12 @@ class ModbusService {
     //   Register 2 → DO2 mg/L  (raw ÷ 100)
     //   Register 4 → Temp      (raw ÷ 10, backup)
     const serialMap = [
-      { sensor: 'ph',          unitId: 2, address: 0, count: 1, scale: 100  },
-      { sensor: 'temperature', unitId: 2, address: 1, count: 1, scale: 10   },
-      { sensor: 'do2',         unitId: 1, address: 2, count: 1, scale: 100, optional: true },
-      { sensor: 'no2',         unitId: 1, address: 6, count: 1, scale: 100, optional: true },
-      { sensor: 'no3',         unitId: 1, address: 8, count: 1, scale: 100, optional: true },
-      { sensor: 'nh4',         unitId: 1, address: 10, count: 1, scale: 100, optional: true },
+      { sensor: 'ph', unitId: 2, address: 0, count: 1, scale: 100 },
+      { sensor: 'temperature', unitId: 2, address: 1, count: 1, scale: 10 },
+      { sensor: 'do2', unitId: 1, address: 2, count: 1, scale: 100, optional: true },
+      { sensor: 'no2', unitId: 1, address: 6, count: 1, scale: 100, optional: true },
+      { sensor: 'no3', unitId: 1, address: 8, count: 1, scale: 100, optional: true },
+      { sensor: 'nh4', unitId: 1, address: 10, count: 1, scale: 100, optional: true },
     ];
 
     // ── TCP Register Map (Arduino Opta 32-bit floats) ─────────────────────
@@ -113,10 +113,10 @@ class ModbusService {
     }));
 
     const mapToUse = isDirectSerial ? serialMap : tcpMap;
-    
+
     // Start with fallback values for all sensors
     Object.assign(readings, mockVals);
-    
+
     const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     for (const config of mapToUse) {
       try {
@@ -146,19 +146,19 @@ class ModbusService {
     const { readings: raw, connected: connectedSet } = await this.readSensors();
     // ── Sensor Connection Status ──────────────────────────────
     const sensorMeta = {
-      ph:          { label: 'pH',          unit: '' },
+      ph: { label: 'pH', unit: '' },
       temperature: { label: 'Temperature', unit: '°C' },
-      do2:         { label: 'DO2',         unit: 'mg/L' },
-      no2:         { label: 'NO2',         unit: 'mg/L' },
-      no3:         { label: 'NO3',         unit: 'mg/L' },
-      nh4:         { label: 'NH4',         unit: 'mg/L' },
+      do2: { label: 'DO2', unit: 'mg/L' },
+      no2: { label: 'NO2', unit: 'mg/L' },
+      no3: { label: 'NO3', unit: 'mg/L' },
+      nh4: { label: 'NH4', unit: 'mg/L' },
     };
     console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.log('  🔌 Sensor Status Report');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     for (const [key, meta] of Object.entries(sensorMeta)) {
       const isConnected = connectedSet.has(key);
-      const status  = isConnected ? '✅ CONNECTED   ' : '❌ DISCONNECTED';
+      const status = isConnected ? '✅ CONNECTED   ' : '❌ DISCONNECTED';
       const reading = isConnected ? `${raw[key]} ${meta.unit}` : '–';
       console.log(`  ${status} | ${meta.label.padEnd(12)} | ${reading}`);
     }
@@ -173,7 +173,7 @@ class ModbusService {
         calMap[c.sensor] = { offset: c.offsetVal, scale: c.scaleVal };
       });
 
-  
+
       const calibrated = {};
       for (const [key, value] of Object.entries(raw)) {
         const cal = calMap[key] || { offset: 0, scale: 1 };
@@ -183,17 +183,16 @@ class ModbusService {
       // Save to DB via Prisma
       await this.prisma.sensorLog.create({
         data: {
-          ph:          calibrated.ph,
+          ph: calibrated.ph,
           temperature: calibrated.temperature,
-          do2:         calibrated.do2,
-          no2:         calibrated.no2,
-          no3:         calibrated.no3,
-          nh4:         calibrated.nh4,
+          do2: calibrated.do2,
+          no2: calibrated.no2,
+          no3: calibrated.no3,
+          nh4: calibrated.nh4,
           serialNo,
         },
       });
 
-      // Check alarm rules — returns { ph: false, no2: true, ... }
       const alarmState = await this.checkAlarms(calibrated);
 
       // Emit live data + alarm state via socket.io
@@ -259,8 +258,8 @@ class ModbusService {
             // Log to alarm history via Prisma
             await this.prisma.alarmHistory.create({
               data: {
-                ruleId:  rule.id,
-                sensor:  rule.sensor,
+                ruleId: rule.id,
+                sensor: rule.sensor,
                 value,
                 message: msg,
               },
@@ -270,7 +269,7 @@ class ModbusService {
             emitAlarmTriggered({ sensor: rule.sensor, value, message: msg });
 
             // Push alert
-            await pushService.sendAlert(msg);     
+            await pushService.sendAlert(msg);
           }
         }
       }
