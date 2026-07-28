@@ -99,7 +99,8 @@ class ModbusService {
     // Populate all readings with mock/fallback values first
     Object.assign(readings, mockVals);
     
-    // Attempt to read actual hardware sensors
+    // Attempt to read actual hardware sensors (round-robin with delay between each)
+    const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     for (const [sensor, config] of Object.entries(mapToUse)) {
       try {
         // Set the correct Unit ID for each individual sensor on the bus
@@ -112,6 +113,8 @@ class ModbusService {
         console.warn(`⚠️ Modbus read timeout/error for ${sensor} (Unit ID: ${this.client.getID()}): ${err.message}`);
         // readings[sensor] remains populated with mockVals[sensor]
       }
+      // Short pause between sensor reads to let the RS485 bus settle
+      await delay(100);
     }
 
     
