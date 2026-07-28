@@ -115,7 +115,26 @@ class ModbusService {
 
   async poll() {
     const raw = await this.readSensors();
-    console.log('📊 Sensor readings:', raw);
+    // ── Sensor Connection Status ──────────────────────────────
+    const sensorMeta = {
+      ph:          { label: 'pH',          unit: '' },
+      temperature: { label: 'Temperature', unit: '°C' },
+      do2:         { label: 'DO2',         unit: 'mg/L' },
+      no2:         { label: 'NO2',         unit: 'mg/L' },
+      no3:         { label: 'NO3',         unit: 'mg/L' },
+      nh4:         { label: 'NH4',         unit: 'mg/L' },
+    };
+    console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('  🔌 Sensor Status Report');
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    for (const [key, meta] of Object.entries(sensorMeta)) {
+      const val = raw[key];
+      const connected = val !== 0 && val !== 0.0;
+      const status  = connected ? '✅ CONNECTED   ' : '❌ DISCONNECTED';
+      const reading = connected ? `${val} ${meta.unit}` : '–';
+      console.log(`  ${status} | ${meta.label.padEnd(12)} | ${reading}`);
+    }
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
     const serialNo = process.env.SERIAL_NO || 'OPTA-001';
 
     try {
