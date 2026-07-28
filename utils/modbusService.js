@@ -92,24 +92,25 @@ class ModbusService {
     const mockVals = this.generateMockData();
 
     // ── Serial Register Map (based on bus scan results) ──────────────────
-    // Unit ID 2: pH+Temp sensor (16-bit integers)
-    //   Register 0 → pH        (raw ÷ 100, e.g. 658 → 6.58)
-    //   Register 1 → Temp °C   (raw ÷ 10,  e.g. 260 → 26.0)
-    // Unit ID 1: DO2 sensor (if present on bus)
-    //   Register 2 → DO2 mg/L  (raw ÷ 100)
-    //   Register 4 → Temp      (raw ÷ 10, backup)
+    // Unit ID 2: Multi-parameter probe (16-bit integers, FC03 Holding unless noted)
+    //   Holding Reg 0 → pH           (raw ÷ 100,  e.g. 656 → 6.56)
+    //   Holding Reg 1 → Temperature  (raw ÷ 10,   e.g. 258 → 25.8°C)
+    //   Holding Reg 2 → ORP          (raw ÷ 10,   e.g. 2264 → 226.4 mV)
+    //   Holding Reg 4 → Conductivity (raw ÷ 10,   e.g. 9606 → 960.6 μS/cm)
+    //   Input   Reg 9 → DO2          (raw ÷ 100,  e.g. 513 → 5.13 mg/L)  ← FC04!
+    // Unit ID 1: Optional secondary sensors (NO2, NO3, NH4) — pending model confirmation
     const serialMap = [
-      { sensor: 'ph', unitId: 2, address: 0, count: 1, scale: 100 },
-      { sensor: 'temperature', unitId: 2, address: 1, count: 1, scale: 10 },
-      { sensor: 'do2', unitId: 1, address: 2, count: 1, scale: 100, optional: true },
-      { sensor: 'no2', unitId: 1, address: 6, count: 1, scale: 100, optional: true },
-      { sensor: 'no3', unitId: 1, address: 8, count: 1, scale: 100, optional: true },
-      { sensor: 'nh4', unitId: 1, address: 10, count: 1, scale: 100, optional: true },
+      { sensor: 'ph',          unitId: 2, address: 0,  count: 1, scale: 100, fc: 'holding' },
+      { sensor: 'temperature', unitId: 2, address: 1,  count: 1, scale: 10,  fc: 'holding' },
+      { sensor: 'do2',         unitId: 2, address: 9,  count: 1, scale: 100, fc: 'input'   }, // FC04 Input Register
+      { sensor: 'no2',         unitId: 1, address: 6,  count: 1, scale: 100, fc: 'holding', optional: true },
+      { sensor: 'no3',         unitId: 1, address: 8,  count: 1, scale: 100, fc: 'holding', optional: true },
+      { sensor: 'nh4',         unitId: 1, address: 10, count: 1, scale: 100, fc: 'holding', optional: true },
     ];
 
     // ── TCP Register Map (Arduino Opta 32-bit floats) ─────────────────────
     const tcpMap = Object.entries(REGISTER_MAP).map(([sensor, cfg]) => ({
-      sensor, ...cfg, unitId: parseInt(process.env.MODBUS_UNIT_ID || '1'), scale: null,
+      sensor, ...cfg, unitId: parseInt(process.env.MODBUS_UNIT_ID || '1'), scale: null, fc: 'holding',
     }));
 
     const mapToUse = isDirectSerial ? serialMap : tcpMap;
@@ -121,13 +122,17 @@ class ModbusService {
     for (const config of mapToUse) {
       try {
         this.client.setID(config.unitId);
-        const data = await this.client.readHoldingRegisters(config.address, config.count);
+        // Use a short timeout for optional sensors so missing hardware fails fast
+        this.client.setTimeout(config.optional ? 800 : 3000);
+
+        // Choose function code: FC03 Holding or FC04 Input Registers
+        const data = config.fc === 'input'
+          ? await this.client.readInputRegisters(config.address, config.count)
+          : await this.client.readHoldingRegisters(config.address, config.count);
 
         if (config.scale !== null) {
-          // 16-bit integer sensor (e.g. pH/Temp from Unit ID 2)
           readings[config.sensor] = this.registerToScaled(data.data[0], config.scale);
         } else {
-          // 32-bit float sensor (e.g. Arduino Opta over TCP)
           readings[config.sensor] = this.registersToFloat(data.data);
         }
         connectedSensors.add(config.sensor);
@@ -135,8 +140,9 @@ class ModbusService {
         if (!config.optional) {
           console.warn(`⚠️ Modbus read error for ${config.sensor} (Unit ID: ${config.unitId}): ${err.message}`);
         }
+        // else: silently skip missing optional sensor
       }
-      await delay(150);
+      await delay(100);
     }
 
     return { readings, connected: connectedSensors };
