@@ -44,17 +44,18 @@ class ModbusService {
   }
 
   async connect() {
+    const port = process.env.MODBUS_PORT || '/dev/ttyUSB0';
+    const baud = parseInt(process.env.MODBUS_BAUD || '4800');
+    const unitId = parseInt(process.env.MODBUS_UNIT_ID || '1');
     try {
-      await this.client.connectTCP(process.env.MODBUS_HOST || '192.168.1.100', {
-        port: parseInt(process.env.MODBUS_PORT || '502'),
-      });
-      this.client.setID(parseInt(process.env.MODBUS_UNIT_ID || '1'));
-      this.client.setTimeout(3000);
+      await this.client.connectRTUBuffered(port, { baudRate: baud });
+      this.client.setID(unitId);
+      this.client.setTimeout(5000);
       this.connected = true;
       this.mockMode = false;
-      console.log('Modbus TCP connected to Arduino Opta');
+      console.log(`Modbus RTU connected via Serial to ${port} (${baud} baud)`);
     } catch (err) {
-      console.warn(`Modbus not available (${err.message}). Running in MOCK mode.`);
+      console.warn(`Modbus RTU not available (${err.message}). Running in MOCK mode.`);
       this.connected = false;
       this.mockMode = true;
     }
@@ -70,14 +71,20 @@ class ModbusService {
       }
       return readings;
     } catch (err) {
-      console.error(' Modbus read error:', err.message);
-      this.mockMode = true;
-      return this.generateMockData();
+      console.error(`Modbus read timeout/error for sensor: ${err.message}`);
+      // Try to reconnect instead of permanently going mock
+      console.warn('Attempting Modbus reconnect...');
+      try {
+        this.client.close();
+      } catch (_) {}
+      await this.connect();
+      return null; // skip this poll cycle
     }
   }
 
   async poll() {
     const raw = await this.readSensors();
+    if (!raw) return; // skip cycle during reconnect
     const serialNo = process.env.SERIAL_NO || 'OPTA-001';
 
     try {
