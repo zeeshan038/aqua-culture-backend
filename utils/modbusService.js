@@ -78,16 +78,13 @@ class ModbusService {
   }
 
   async readSensors() {
-    if (this.mockMode) return this.generateMockData();
+    if (this.mockMode) return { readings: this.generateMockData(), connected: new Set() };
     
     const readings = {};
+    const connectedSensors = new Set();
     const isDirectSerial = process.env.MODBUS_CONNECTION_TYPE === 'serial';
     const mockVals = this.generateMockData();
     
-    // In direct serial mode, the sensor returns 32-bit floats (2 registers each)
-    // Each sensor MUST have its own unique Unit ID on the RS485 bus to avoid conflicts:
-    //   DO2 sensor  → Unit ID 1  (registers: 2 = mg/L, 4 = Temperature °C)
-    //   pH sensor   → Unit ID 2
     const serialMap = {
       do2:         { unitId: 1, address: 2, count: 2 },
       temperature: { unitId: 1, address: 4, count: 2 },
@@ -99,30 +96,26 @@ class ModbusService {
     // Populate all readings with mock/fallback values first
     Object.assign(readings, mockVals);
     
-    // Attempt to read actual hardware sensors (round-robin with delay between each)
     const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
     for (const [sensor, config] of Object.entries(mapToUse)) {
       try {
-        // Set the correct Unit ID for each individual sensor on the bus
         const unitId = config.unitId ?? parseInt(process.env.MODBUS_UNIT_ID || '1');
         this.client.setID(unitId);
         
         const data = await this.client.readHoldingRegisters(config.address, config.count);
         readings[sensor] = this.registersToFloat(data.data);
+        connectedSensors.add(sensor); // ✅ mark as actually responding
       } catch (err) {
         console.warn(`⚠️ Modbus read timeout/error for ${sensor} (Unit ID: ${this.client.getID()}): ${err.message}`);
-        // readings[sensor] remains populated with mockVals[sensor]
       }
-      // Short pause between sensor reads to let the RS485 bus settle
       await delay(100);
     }
 
-    
-    return readings;
+    return { readings, connected: connectedSensors };
   }
 
   async poll() {
-    const raw = await this.readSensors();
+    const { readings: raw, connected: connectedSet } = await this.readSensors();
     // ── Sensor Connection Status ──────────────────────────────
     const sensorMeta = {
       ph:          { label: 'pH',          unit: '' },
@@ -136,10 +129,9 @@ class ModbusService {
     console.log('  🔌 Sensor Status Report');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     for (const [key, meta] of Object.entries(sensorMeta)) {
-      const val = raw[key];
-      const connected = val !== 0 && val !== 0.0;
-      const status  = connected ? '✅ CONNECTED   ' : '❌ DISCONNECTED';
-      const reading = connected ? `${val} ${meta.unit}` : '–';
+      const isConnected = connectedSet.has(key);
+      const status  = isConnected ? '✅ CONNECTED   ' : '❌ DISCONNECTED';
+      const reading = isConnected ? `${raw[key]} ${meta.unit}` : '–';
       console.log(`  ${status} | ${meta.label.padEnd(12)} | ${reading}`);
     }
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');

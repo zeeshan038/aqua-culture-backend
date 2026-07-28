@@ -22,7 +22,6 @@ class ModbusService {
     this.intervalId = null;
   }
 
-  // Parse two Modbus registers into a 32-bit float
   registersToFloat(registers) {
     const buf = Buffer.alloc(4);
     buf.writeUInt16BE(registers[0], 0);
