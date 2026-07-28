@@ -28,12 +28,18 @@ class ModbusService {
     this.intervalId = null;
   }
 
-  // Parse two Modbus registers into a 32-bit float
+  // Parse two Modbus registers into a 32-bit float (for float-based sensors)
   registersToFloat(registers) {
     const buf = Buffer.alloc(4);
     buf.writeUInt16BE(registers[0], 0);
     buf.writeUInt16BE(registers[1], 2);
     return parseFloat(buf.readFloatBE(0).toFixed(3));
+  }
+
+  // Parse a single 16-bit integer register with a scale divisor
+  // e.g. raw=658, scale=100 → 6.58
+  registerToScaled(raw, scale) {
+    return parseFloat((raw / scale).toFixed(3));
   }
 
   // Realistic mock data for development without hardware
@@ -85,30 +91,52 @@ class ModbusService {
     const isDirectSerial = process.env.MODBUS_CONNECTION_TYPE === 'serial';
     const mockVals = this.generateMockData();
     
-    const serialMap = {
-      do2:         { unitId: 1, address: 2, count: 2 },
-      temperature: { unitId: 1, address: 4, count: 2 },
-      ph:          { unitId: 2, address: 0, count: 2 },
-    };
+    // ── Serial Register Map (based on bus scan results) ──────────────────
+    // Unit ID 2: pH+Temp sensor (16-bit integers)
+    //   Register 0 → pH        (raw ÷ 100, e.g. 658 → 6.58)
+    //   Register 1 → Temp °C   (raw ÷ 10,  e.g. 260 → 26.0)
+    // Unit ID 1: DO2 sensor (if present on bus)
+    //   Register 2 → DO2 mg/L  (raw ÷ 100)
+    //   Register 4 → Temp      (raw ÷ 10, backup)
+    const serialMap = [
+      { sensor: 'ph',          unitId: 2, address: 0, count: 1, scale: 100  },
+      { sensor: 'temperature', unitId: 2, address: 1, count: 1, scale: 10   },
+      { sensor: 'do2',         unitId: 1, address: 2, count: 1, scale: 100, optional: true },
+      { sensor: 'no2',         unitId: 1, address: 6, count: 1, scale: 100, optional: true },
+      { sensor: 'no3',         unitId: 1, address: 8, count: 1, scale: 100, optional: true },
+      { sensor: 'nh4',         unitId: 1, address: 10, count: 1, scale: 100, optional: true },
+    ];
+
+    // ── TCP Register Map (Arduino Opta 32-bit floats) ─────────────────────
+    const tcpMap = Object.entries(REGISTER_MAP).map(([sensor, cfg]) => ({
+      sensor, ...cfg, unitId: parseInt(process.env.MODBUS_UNIT_ID || '1'), scale: null,
+    }));
+
+    const mapToUse = isDirectSerial ? serialMap : tcpMap;
     
-    const mapToUse = isDirectSerial ? serialMap : REGISTER_MAP;
-    
-    // Populate all readings with mock/fallback values first
+    // Start with fallback values for all sensors
     Object.assign(readings, mockVals);
     
     const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
-    for (const [sensor, config] of Object.entries(mapToUse)) {
+    for (const config of mapToUse) {
       try {
-        const unitId = config.unitId ?? parseInt(process.env.MODBUS_UNIT_ID || '1');
-        this.client.setID(unitId);
-        
+        this.client.setID(config.unitId);
         const data = await this.client.readHoldingRegisters(config.address, config.count);
-        readings[sensor] = this.registersToFloat(data.data);
-        connectedSensors.add(sensor); // ✅ mark as actually responding
+
+        if (config.scale !== null) {
+          // 16-bit integer sensor (e.g. pH/Temp from Unit ID 2)
+          readings[config.sensor] = this.registerToScaled(data.data[0], config.scale);
+        } else {
+          // 32-bit float sensor (e.g. Arduino Opta over TCP)
+          readings[config.sensor] = this.registersToFloat(data.data);
+        }
+        connectedSensors.add(config.sensor);
       } catch (err) {
-        console.warn(`⚠️ Modbus read timeout/error for ${sensor} (Unit ID: ${this.client.getID()}): ${err.message}`);
+        if (!config.optional) {
+          console.warn(`⚠️ Modbus read error for ${config.sensor} (Unit ID: ${config.unitId}): ${err.message}`);
+        }
       }
-      await delay(100);
+      await delay(150);
     }
 
     return { readings, connected: connectedSensors };
