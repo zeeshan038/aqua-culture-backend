@@ -42,8 +42,8 @@ class ModbusService {
       parseFloat((base + (Math.random() - 0.5) * variance).toFixed(3));
     return {
       ph:          rand(7.2,  0.4),
-      temperature: rand(24.5, 2.0),
-      do2:         rand(7.5,  1.0),
+      temperature: 3.0,
+      do2:         3.0,
       no2:         rand(0.05, 0.02),
       no3:         rand(15.0, 5.0),
       nh4:         rand(0.5,  0.2),
