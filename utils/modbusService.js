@@ -38,15 +38,13 @@ class ModbusService {
 
   // Realistic mock data for development without hardware
   generateMockData() {
-    const rand = (base, variance) =>
-      parseFloat((base + (Math.random() - 0.5) * variance).toFixed(3));
     return {
-      ph:          rand(7.2,  0.4),
-      temperature: 3.0,
-      do2:         3.0,
-      no2:         rand(0.05, 0.02),
-      no3:         rand(15.0, 5.0),
-      nh4:         rand(0.5,  0.2),
+      ph:          0.0,
+      temperature: 0.0,
+      do2:         0.0,
+      no2:         0.0,
+      no3:         0.0,
+      nh4:         0.0,
     };
   }
 
@@ -87,9 +85,9 @@ class ModbusService {
     const mockVals = this.generateMockData();
     
     // In direct serial mode, the sensor returns 32-bit floats (2 registers each)
-    // Register 0-1 is DO2 (mg/L), Register 4-5 is Temperature (°C)
+    // Register 2-3 is DO2 (mg/L), Register 4-5 is Temperature (°C)
     const serialMap = {
-      do2: { address: 0, count: 2 },
+      do2: { address: 2, count: 2 },
       temperature: { address: 4, count: 2 },
     };
     
