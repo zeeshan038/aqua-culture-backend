@@ -26,6 +26,7 @@ class ModbusService {
     this.connected = false;
     this.mockMode = false;
     this.intervalId = null;
+    this.isBusy = false;
   }
 
   // Parse two Modbus registers into a 32-bit float (for float-based sensors)
@@ -100,12 +101,12 @@ class ModbusService {
     //   Input   Reg 9 → DO2          (raw ÷ 100,  e.g. 513 → 5.13 mg/L)  ← FC04!
     // Unit ID 1: Optional secondary sensors (NO2, NO3, NH4) — pending model confirmation
     const serialMap = [
-      { sensor: 'ph',          unitId: 2, address: 0,  count: 1, scale: 100, fc: 'holding' },
-      { sensor: 'temperature', unitId: 2, address: 1,  count: 1, scale: 10,  fc: 'holding' },
-      { sensor: 'do2',         unitId: 2, address: 9,  count: 1, scale: 100, fc: 'input'   }, // FC04 Input Register
-      { sensor: 'no2',         unitId: 1, address: 6,  count: 1, scale: 100, fc: 'holding', optional: true },
-      { sensor: 'no3',         unitId: 1, address: 8,  count: 1, scale: 100, fc: 'holding', optional: true },
-      { sensor: 'nh4',         unitId: 1, address: 10, count: 1, scale: 100, fc: 'holding', optional: true },
+      { sensor: 'ph', unitId: 2, address: 0, count: 1, scale: 100, fc: 'holding' },
+      { sensor: 'temperature', unitId: 2, address: 1, count: 1, scale: 10, fc: 'holding' },
+      { sensor: 'do2', unitId: 2, address: 9, count: 1, scale: 100, fc: 'input' }, // FC04 Input Register
+      { sensor: 'no2', unitId: 1, address: 6, count: 1, scale: 100, fc: 'holding', optional: true },
+      { sensor: 'no3', unitId: 1, address: 8, count: 1, scale: 100, fc: 'holding', optional: true },
+      { sensor: 'nh4', unitId: 1, address: 10, count: 1, scale: 100, fc: 'holding', optional: true },
     ];
 
     // ── TCP Register Map (Arduino Opta 32-bit floats) ─────────────────────
@@ -149,29 +150,34 @@ class ModbusService {
   }
 
   async poll() {
-    const { readings: raw, connected: connectedSet } = await this.readSensors();
-    // ── Sensor Connection Status ──────────────────────────────
-    const sensorMeta = {
-      ph: { label: 'pH', unit: '' },
-      temperature: { label: 'Temperature', unit: '°C' },
-      do2: { label: 'DO2', unit: 'mg/L' },
-      no2: { label: 'NO2', unit: 'mg/L' },
-      no3: { label: 'NO3', unit: 'mg/L' },
-      nh4: { label: 'NH4', unit: 'mg/L' },
-    };
-    console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.log('  🔌 Sensor Status Report');
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    for (const [key, meta] of Object.entries(sensorMeta)) {
-      const isConnected = connectedSet.has(key);
-      const status = isConnected ? '✅ CONNECTED   ' : '❌ DISCONNECTED';
-      const reading = isConnected ? `${raw[key]} ${meta.unit}` : '–';
-      console.log(`  ${status} | ${meta.label.padEnd(12)} | ${reading}`);
+    if (this.isBusy) {
+      console.log('⏳ Modbus polling skipped (connection is busy with another operation)');
+      return;
     }
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
-    const serialNo = process.env.SERIAL_NO || 'OPTA-001';
-
+    this.isBusy = true;
     try {
+      const { readings: raw, connected: connectedSet } = await this.readSensors();
+      // ── Sensor Connection Status ──────────────────────────────
+      const sensorMeta = {
+        ph: { label: 'pH', unit: '' },
+        temperature: { label: 'Temperature', unit: '°C' },
+        do2: { label: 'DO2', unit: 'mg/L' },
+        no2: { label: 'NO2', unit: 'mg/L' },
+        no3: { label: 'NO3', unit: 'mg/L' },
+        nh4: { label: 'NH4', unit: 'mg/L' },
+      };
+      console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      console.log('  🔌 Sensor Status Report');
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      for (const [key, meta] of Object.entries(sensorMeta)) {
+        const isConnected = connectedSet.has(key);
+        const status = isConnected ? '✅ CONNECTED   ' : '❌ DISCONNECTED';
+        const reading = isConnected ? `${raw[key]} ${meta.unit}` : '–';
+        console.log(`  ${status} | ${meta.label.padEnd(12)} | ${reading}`);
+      }
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+      const serialNo = process.env.SERIAL_NO || 'OPTA-001';
+
       // Fetch calibration offsets via Prisma
       const calibrations = await this.prisma.calibration.findMany();
       const calMap = {};
@@ -212,6 +218,47 @@ class ModbusService {
 
     } catch (err) {
       console.error('❌ Poll error:', err.message);
+    } finally {
+      this.isBusy = false;
+    }
+  }
+
+  // Hardware calibration for Dissolved Oxygen (DO) sensor
+  async calibrateDO(type) {
+    if (this.mockMode) {
+      console.log(`[MOCK] Calibrating DO sensor: ${type} point`);
+      return { success: true, mock: true };
+    }
+
+    if (!this.connected) {
+      throw new Error('Modbus client is not connected');
+    }
+
+    const value = type === 'zero' ? 0x0001 : 0x0002;
+    const registerAddress = 0x1010; // Calibration register
+    const unitId = parseInt(process.env.MODBUS_DO_UNIT_ID || '1');
+
+    // Wait if another operation is active
+    let attempts = 0;
+    while (this.isBusy && attempts < 10) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+      attempts++;
+    }
+
+    this.isBusy = true;
+    try {
+      this.client.setID(unitId);
+      this.client.setTimeout(5000);
+
+      console.log(`Writing calibration code ${value} to address ${registerAddress} (Unit ID: ${unitId})...`);
+      await this.client.writeRegister(registerAddress, value);
+      console.log(`✅ Successfully wrote calibration command to DO sensor`);
+      return { success: true };
+    } catch (err) {
+      console.error(`❌ DO calibration register write failed: ${err.message}`);
+      throw err;
+    } finally {
+      this.isBusy = false;
     }
   }
 

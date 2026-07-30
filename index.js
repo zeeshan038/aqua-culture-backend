@@ -39,6 +39,7 @@ server.listen(PORT, async () => {
   console.log(`\n Starting Modbus polling service...`);
 
   const modbus = new ModbusService(prisma);
+  app.set('modbus', modbus);
   await modbus.connect();
   modbus.start();
 
