@@ -103,7 +103,7 @@ class ModbusService {
     const serialMap = [
       { sensor: 'ph', unitId: 2, address: 0, count: 1, scale: 100, fc: 'holding' },
       { sensor: 'temperature', unitId: 2, address: 1, count: 1, scale: 10, fc: 'holding' },
-      { sensor: 'do2', unitId: 2, address: 9, count: 1, scale: 100, fc: 'input' }, // FC04 Input Register
+      { sensor: 'do2',         unitId: parseInt(process.env.MODBUS_DO_UNIT_ID || '1'), address: 2,  count: 2, scale: null, fc: 'holding' },
       { sensor: 'no2', unitId: 1, address: 6, count: 1, scale: 100, fc: 'holding', optional: true },
       { sensor: 'no3', unitId: 1, address: 8, count: 1, scale: 100, fc: 'holding', optional: true },
       { sensor: 'nh4', unitId: 1, address: 10, count: 1, scale: 100, fc: 'holding', optional: true },
